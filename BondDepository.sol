@@ -703,7 +703,7 @@ contract VSQBondDepository is Ownable {
     struct Bond {
         uint payout; // VSQ remaining to be paid
         uint pricePaid; // In DAI, for front end viewing
-        uint32 lastVSQ; // Last interaction
+        uint32 lastTime; // Last interaction
         uint32 vesting; // Seconds left to vest
     }
 
@@ -713,7 +713,7 @@ contract VSQBondDepository is Ownable {
         uint rate; // increment
         uint target; // BCV when adjustment finished
         uint32 buffer; // minimum length (in seconds) between adjustments
-        uint32 lastVSQ; // time when last adjustment made
+        uint32 lastTime; // time when last adjustment made
     }
 
 
@@ -821,7 +821,7 @@ contract VSQBondDepository is Ownable {
             rate: _increment,
             target: _target,
             buffer: _buffer,
-            lastVSQ: uint32(block.timestamp)
+            lastTime: uint32(block.timestamp)
         });
     }
 
@@ -898,7 +898,7 @@ contract VSQBondDepository is Ownable {
         bondInfo[ _depositor ] = Bond({ 
             payout: bondInfo[ _depositor ].payout.add( payout ),
             vesting: terms.vestingTerm,
-            lastVSQ: uint32(block.timestamp),
+            lastTime: uint32(block.timestamp),
             pricePaid: priceInUSD
         });
 
@@ -932,8 +932,8 @@ contract VSQBondDepository is Ownable {
             // store updated deposit info
             bondInfo[ _recipient ] = Bond({
                 payout: info.payout.sub( payout ),
-                vesting: info.vesting.sub32( uint32( block.timestamp ).sub32( info.lastVSQ ) ),
-                lastVSQ: uint32(block.timestamp),
+                vesting: info.vesting.sub32( uint32( block.timestamp ).sub32( info.lastTime ) ),
+                lastTime: uint32(block.timestamp),
                 pricePaid: info.pricePaid
             });
 
@@ -972,7 +972,7 @@ contract VSQBondDepository is Ownable {
      *  @notice makes incremental adjustment to control variable
      */
     function adjust() internal {
-        uint timeCanAdjust = adjustment.lastVSQ.add( adjustment.buffer );
+        uint timeCanAdjust = adjustment.lastTime.add( adjustment.buffer );
         if( adjustment.rate != 0 && block.timestamp >= timeCanAdjust ) {
             uint initial = terms.controlVariable;
             if ( adjustment.add ) {
@@ -986,7 +986,7 @@ contract VSQBondDepository is Ownable {
                     adjustment.rate = 0;
                 }
             }
-            adjustment.lastVSQ = uint32(block.timestamp);
+            adjustment.lastTime = uint32(block.timestamp);
             emit ControlVariableAdjustment( initial, terms.controlVariable, adjustment.rate, adjustment.add );
         }
     }
@@ -1111,7 +1111,7 @@ contract VSQBondDepository is Ownable {
      */
     function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
         Bond memory bond = bondInfo[ _depositor ];
-        uint secondsSinceLast = uint32(block.timestamp).sub( bond.lastVSQ );
+        uint secondsSinceLast = uint32(block.timestamp).sub( bond.lastTime );
         uint vesting = bond.vesting;
 
         if ( vesting > 0 ) {

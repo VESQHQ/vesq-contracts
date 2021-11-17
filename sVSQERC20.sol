@@ -1047,7 +1047,7 @@ contract sVSQ is ERC20Permit, Ownable {
 
     mapping ( address => mapping ( address => uint256 ) ) private _allowedValue;
 
-    constructor() ERC20("sVSQ", "sVSQ", 9) ERC20Permit() {
+    constructor() ERC20("Staked VSQ", "sVSQ", 9) ERC20Permit() {
         initializer = msg.sender;
         _totalSupply = INITIAL_FRAGMENTS_SUPPLY;
         _gonsPerFragment = TOTAL_GONS.div(_totalSupply);

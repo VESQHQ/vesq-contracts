@@ -584,7 +584,7 @@ contract VSQStaking is Ownable {
         uint number;
         uint distribute;
         uint32 length;
-        uint32 endVSQ;
+        uint32 endTime;
     }
     Epoch public epoch;
 
@@ -601,7 +601,7 @@ contract VSQStaking is Ownable {
         address _sVSQ, 
         uint32 _epochLength,
         uint _firstEpochNumber,
-        uint32 _firstEpochVSQ
+        uint32 _firstEpochTime
     ) {
         require( _VSQ != address(0) );
         VSQ = _VSQ;
@@ -611,7 +611,7 @@ contract VSQStaking is Ownable {
         epoch = Epoch({
             length: _epochLength,
             number: _firstEpochNumber,
-            endVSQ: _firstEpochVSQ,
+            endTime: _firstEpochTime,
             distribute: 0
         });
     }
@@ -703,11 +703,11 @@ contract VSQStaking is Ownable {
         @notice trigger rebase if epoch over
      */
     function rebase() public {
-        if( epoch.endVSQ <= uint32(block.timestamp) ) {
+        if( epoch.endTime <= uint32(block.timestamp) ) {
 
             IsVSQ( sVSQ ).rebase( epoch.distribute, epoch.number );
 
-            epoch.endVSQ = epoch.endVSQ.add32( epoch.length );
+            epoch.endTime = epoch.endTime.add32( epoch.length );
             epoch.number++;
             
             if ( distributor != address(0) ) {

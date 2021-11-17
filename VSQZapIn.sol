@@ -846,7 +846,7 @@ interface IUniswapV2Pair {
         returns (
             uint112 _reserve0,
             uint112 _reserve1,
-            uint32 _blockVSQstampLast
+            uint32 _blockTimestampLast
         );
 }
 

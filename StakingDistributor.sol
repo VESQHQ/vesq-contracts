@@ -375,7 +375,7 @@ contract Distributor is Policy {
     address public immutable treasury;
     
     uint32 public immutable epochLength;
-    uint32 public nextEpochVSQ;
+    uint32 public nextEpochTime;
     
     mapping( uint => Adjust ) public adjustments;
     
@@ -398,13 +398,13 @@ contract Distributor is Policy {
     
     /* ====== CONSTRUCTOR ====== */
 
-    constructor( address _treasury, address _ohm, uint32 _epochLength, uint32 _nextEpochVSQ ) {        
+    constructor( address _treasury, address _vsq, uint32 _epochLength, uint32 _nextEpochTime ) {        
         require( _treasury != address(0) );
         treasury = _treasury;
-        require( _ohm != address(0) );
-        VSQ = _ohm;
+        require( _vsq != address(0) );
+        VSQ = _vsq;
         epochLength = _epochLength;
-        nextEpochVSQ = _nextEpochVSQ;
+        nextEpochTime = _nextEpochTime;
     }
     
     
@@ -415,8 +415,8 @@ contract Distributor is Policy {
         @notice send epoch reward to staking contract
      */
     function distribute() external returns ( bool ) {
-        if ( nextEpochVSQ <= uint32(block.timestamp) ) {
-            nextEpochVSQ = nextEpochVSQ.add32( epochLength ); // set next epoch time
+        if ( nextEpochTime <= uint32(block.timestamp) ) {
+            nextEpochTime = nextEpochTime.add32( epochLength ); // set next epoch time
             
             // distribute rewards to each recipient
             for ( uint i = 0; i < info.length; i++ ) {
