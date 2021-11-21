@@ -836,7 +836,9 @@ contract VSQBondDepository is Ownable {
         uint _target,
         uint32 _buffer 
     ) external onlyPolicy() {
-        require( _increment <= terms.controlVariable.mul( 25 ).div( 1000 ), "Increment too large" );
+        uint256 maxIncrement = terms.controlVariable.mul( 25 ).div( 1000 );
+        require( _increment <= maxIncrement ||
+                    maxIncrement == 0 && _increment == 1, "Increment too large" );
 
         adjustment = Adjust({
             add: _addition,
