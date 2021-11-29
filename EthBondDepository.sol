@@ -1,6 +1,65 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity 0.7.5;
 
+/**
+ * @dev Contract module that helps prevent reentrant calls to a function.
+ *
+ * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
+ * available, which can be applied to functions to make sure there are no nested
+ * (reentrant) calls to them.
+ *
+ * Note that because there is a single `nonReentrant` guard, functions marked as
+ * `nonReentrant` may not call one another. This can be worked around by making
+ * those functions `private`, and then adding `external` `nonReentrant` entry
+ * points to them.
+ *
+ * TIP: If you would like to learn more about reentrancy and alternative ways
+ * to protect against it, check out our blog post
+ * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
+ */
+abstract contract ReentrancyGuard {
+    // Booleans are more expensive than uint256 or any type that takes up a full
+    // word because each write operation emits an extra SLOAD to first read the
+    // slot's contents, replace the bits taken up by the boolean, and then write
+    // back. This is the compiler's defense against contract upgrades and
+    // pointer aliasing, and it cannot be disabled.
+
+    // The values being non-zero value makes deployment a bit more expensive,
+    // but in exchange the refund on every call to nonReentrant will be lower in
+    // amount. Since refunds are capped to a percentage of the total
+    // transaction's gas, it is best to keep them low in cases like this one, to
+    // increase the likelihood of the full refund coming into effect.
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+
+    uint256 private _status;
+
+    constructor () {
+        _status = _NOT_ENTERED;
+    }
+
+    /**
+     * @dev Prevents a contract from calling itself, directly or indirectly.
+     * Calling a `nonReentrant` function from another `nonReentrant`
+     * function is not supported. It is possible to prevent this from happening
+     * by making the `nonReentrant` function external, and make it call a
+     * `private` function that does the actual work.
+     */
+    modifier nonReentrant() {
+        // On the first call to nonReentrant, _notEntered will be true
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
+
+        // Any calls to nonReentrant after this point will fail
+        _status = _ENTERED;
+
+        _;
+
+        // By storing the original value once again, a refund is triggered (see
+        // https://eips.ethereum.org/EIPS/eip-2200)
+        _status = _NOT_ENTERED;
+    }
+}
+
 interface IOwnable {
   function policy() external view returns (address);
 
@@ -11,43 +70,65 @@ interface IOwnable {
   function pullManagement() external;
 }
 
-contract Ownable is IOwnable {
+// Audit on 5-Jan-2021 by Keno and BoringCrypto
+// Source: https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol + Claimable.sol
+// Edited by BoringCrypto
 
-    address internal _owner;
-    address internal _newOwner;
+contract BoringOwnableData {
+    address public owner;
+    address public pendingOwner;
+}
 
-    event OwnershipPushed(address indexed previousOwner, address indexed newOwner);
-    event OwnershipPulled(address indexed previousOwner, address indexed newOwner);
+contract BoringOwnable is BoringOwnableData {
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-    constructor () {
-        _owner = msg.sender;
-        emit OwnershipPushed( address(0), _owner );
+    /// @notice `owner` defaults to msg.sender on construction.
+    constructor() public {
+        owner = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
     }
 
-    function policy() public view override returns (address) {
-        return _owner;
+    /// @notice Transfers ownership to `newOwner`. Either directly or claimable by the new pending owner.
+    /// Can only be invoked by the current `owner`.
+    /// @param newOwner Address of the new owner.
+    /// @param direct True if `newOwner` should be set immediately. False if `newOwner` needs to use `claimOwnership`.
+    /// @param renounce Allows the `newOwner` to be `address(0)` if `direct` and `renounce` is True. Has no effect otherwise.
+    function transferOwnership(
+        address newOwner,
+        bool direct,
+        bool renounce
+    ) public onlyOwner {
+        if (direct) {
+            // Checks
+            require(newOwner != address(0) || renounce, "Ownable: zero address");
+
+            // Effects
+            emit OwnershipTransferred(owner, newOwner);
+            owner = newOwner;
+            pendingOwner = address(0);
+        } else {
+            // Effects
+            pendingOwner = newOwner;
+        }
     }
 
-    modifier onlyPolicy() {
-        require( _owner == msg.sender, "Ownable: caller is not the owner" );
+    /// @notice Needs to be called by `pendingOwner` to claim ownership.
+    function claimOwnership() public {
+        address _pendingOwner = pendingOwner;
+
+        // Checks
+        require(msg.sender == _pendingOwner, "Ownable: caller != pending owner");
+
+        // Effects
+        emit OwnershipTransferred(owner, _pendingOwner);
+        owner = _pendingOwner;
+        pendingOwner = address(0);
+    }
+
+    /// @notice Only allows the `owner` to execute the function.
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Ownable: caller is not the owner");
         _;
-    }
-
-    function renounceManagement() public virtual override onlyPolicy() {
-        emit OwnershipPushed( _owner, address(0) );
-        _owner = address(0);
-    }
-
-    function pushManagement( address newOwner_ ) public virtual override onlyPolicy() {
-        require( newOwner_ != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipPushed( _owner, newOwner_ );
-        _newOwner = newOwner_;
-    }
-    
-    function pullManagement() public virtual override {
-        require( msg.sender == _newOwner, "Ownable: must be new owner to pull");
-        emit OwnershipPulled( _owner, _newOwner );
-        _owner = _newOwner;
     }
 }
 
@@ -295,9 +376,6 @@ interface IERC20 {
 abstract contract ERC20 is IERC20 {
 
     using SafeMath for uint256;
-
-    // TODO comment actual hash value.
-    bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256( "ERC20Token" );
     
     mapping (address => uint256) internal _balances;
 
@@ -453,7 +531,7 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
     // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
     bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
 
-    bytes32 public DOMAIN_SEPARATOR;
+    bytes32 public immutable DOMAIN_SEPARATOR;
 
     constructor() {
         uint256 chainID;
@@ -663,10 +741,12 @@ interface ITreasury {
 
 interface IStaking {
     function stake( uint _amount, address _recipient ) external returns ( bool );
+    function checkUserDepositorWhitelist( address recipient, address sender ) external returns ( bool );
 }
 
 interface IStakingHelper {
     function stake( uint _amount, address _recipient ) external;
+    function checkUserDepositorWhitelist( address recipient, address sender ) external returns ( bool );
 }
 
 interface IWETH9 is IERC20 {
@@ -674,12 +754,12 @@ interface IWETH9 is IERC20 {
     function deposit() external payable;
 }
 
-contract VSQBondDepository is Ownable {
+contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
+    using SafeERC20 for IWETH9;
     using SafeMath for uint;
-    using SafeMath for uint32;
 
 
 
@@ -690,7 +770,11 @@ contract VSQBondDepository is Ownable {
     event BondRedeemed( address indexed recipient, uint payout, uint remaining );
     event BondPriceChanged( uint indexed priceInUSD, uint indexed internalPrice, uint indexed debtRatio );
     event ControlVariableAdjustment( uint initialBCV, uint newBCV, uint adjustment, bool addition );
-
+    event BondTermsInitialized( uint indexed _controlVariable, uint indexed _minimumPrice, uint _maxPayout, uint _maxDebt, uint _vestingTerm, uint indexed initialLastDcay );
+    event SetBondTerms( uint _parameter, uint _input );
+    event SetAdjustment( bool _addition, uint _increment, uint indexed _target, uint _buffer, uint indexed initialLastAdjustment );
+    event SetStaking( address _staking, bool _helper );
+    event LostTokenRecovered( address _token, uint amount );
 
 
 
@@ -700,7 +784,7 @@ contract VSQBondDepository is Ownable {
     address public immutable treasury; // mints VSQ when receives principle
     address public immutable DAO; // receives profit share from bond
 
-    AggregatorV3Interface internal priceFeed;
+    AggregatorV3Interface public priceFeed;
 
     address public staking; // to auto-stake payout
     address public stakingHelper; // to stake and claim if no staking warmup
@@ -712,7 +796,7 @@ contract VSQBondDepository is Ownable {
     mapping( address => Bond ) public bondInfo; // stores bond information for depositors
 
     uint public totalDebt; // total value of outstanding bonds; used for pricing
-    uint32 public lastDecay; // reference block for debt decay
+    uint256 public lastDecay; // reference time for debt decay
 
 
 
@@ -725,15 +809,15 @@ contract VSQBondDepository is Ownable {
         uint minimumPrice; // vs principle value. 4 decimals (1500 = 0.15)
         uint maxPayout; // in thousandths of a %. i.e. 500 = 0.5%
         uint maxDebt; // 9 decimal debt ratio, max % total supply created as debt
-        uint32 vestingTerm; // in seconds
+        uint256 vestingTerm; // in seconds
     }
 
     // Info for bond holder
     struct Bond {
         uint payout; // VSQ remaining to be paid
         uint pricePaid; // In DAI, for front end viewing
-        uint32 vesting; // Seconds left to vest
-        uint32 lastTime; // Last interaction
+        uint256 vesting; // Seconds left to vest
+        uint256 lastTime; // Last interaction
     }
 
     // Info for incremental adjustments to control variable 
@@ -741,8 +825,8 @@ contract VSQBondDepository is Ownable {
         bool add; // addition or subtraction
         uint rate; // increment
         uint target; // BCV when adjustment finished
-        uint32 buffer; // minimum length (in seconds) between adjustments
-        uint32 lastTime; // block when last adjustment made
+        uint256 buffer; // minimum length (in seconds) between adjustments
+        uint256 lastTime; // time when last adjustment made
     }
 
 
@@ -772,21 +856,24 @@ contract VSQBondDepository is Ownable {
     /**
      *  @notice initializes bond parameters
      *  @param _controlVariable uint
-     *  @param _vestingTerm uint
      *  @param _minimumPrice uint
      *  @param _maxPayout uint
      *  @param _maxDebt uint
-     *  @param _initialDebt uint
+     *  @param _vestingTerm uint
      */
     function initializeBondTerms( 
         uint _controlVariable, 
         uint _minimumPrice,
         uint _maxPayout,
         uint _maxDebt,
-        uint _initialDebt,
-        uint32 _vestingTerm
-    ) external onlyPolicy() {
+        uint256 _vestingTerm
+    ) external onlyOwner() {
+        require( lastDecay == 0, "bond has already been initalized" );
         require( currentDebt() == 0, "Debt must be 0 for initialization" );
+        require( _controlVariable > 0, "Bonds must be initialized greater than 0" );
+        require( _maxPayout > 0, "maxPayout must be initialized greater than 0");
+        require( _vestingTerm >= 129600, "Vesting must be longer than 36 hours" );
+
         terms = Terms ({
             controlVariable: _controlVariable,
             vestingTerm: _vestingTerm,
@@ -794,8 +881,9 @@ contract VSQBondDepository is Ownable {
             maxPayout: _maxPayout,
             maxDebt: _maxDebt
         });
-        totalDebt = _initialDebt;
-        lastDecay = uint32(block.timestamp);
+        lastDecay = block.timestamp;
+
+        emit BondTermsInitialized( _controlVariable, _minimumPrice, _maxPayout, _maxDebt, _vestingTerm, lastDecay );
     }
 
 
@@ -809,10 +897,10 @@ contract VSQBondDepository is Ownable {
      *  @param _parameter PARAMETER
      *  @param _input uint
      */
-    function setBondTerms ( PARAMETER _parameter, uint _input ) external onlyPolicy() {
+    function setBondTerms ( PARAMETER _parameter, uint _input ) external onlyOwner() {
         if ( _parameter == PARAMETER.VESTING ) { // 0
             require( _input >= 129600, "Vesting must be longer than 36 hours" );
-            terms.vestingTerm = uint32(_input);
+            terms.vestingTerm = _input;
         } else if ( _parameter == PARAMETER.PAYOUT ) { // 1
             require( _input <= 1000, "Payout cannot be above 1 percent" );
             terms.maxPayout = _input;
@@ -821,6 +909,8 @@ contract VSQBondDepository is Ownable {
         } else if ( _parameter == PARAMETER.MINPRICE ) { // 3
             terms.minimumPrice = _input;
         }
+
+        emit SetBondTerms( uint256(_parameter), _input );
     }
 
     /**
@@ -834,8 +924,8 @@ contract VSQBondDepository is Ownable {
         bool _addition,
         uint _increment, 
         uint _target,
-        uint32 _buffer 
-    ) external onlyPolicy() {
+        uint256 _buffer 
+    ) external onlyOwner() {
         uint256 maxIncrement = terms.controlVariable.mul( 25 ).div( 1000 );
         require( _increment <= maxIncrement ||
                     maxIncrement == 0 && _increment == 1, "Increment too large" );
@@ -845,8 +935,10 @@ contract VSQBondDepository is Ownable {
             rate: _increment,
             target: _target,
             buffer: _buffer,
-            lastTime: uint32(block.timestamp)
+            lastTime: block.timestamp
         });
+
+        emit SetAdjustment( _addition, _increment, _target, _buffer, block.timestamp );
     }
 
     /**
@@ -854,7 +946,7 @@ contract VSQBondDepository is Ownable {
      *  @param _staking address
      *  @param _helper bool
      */
-    function setStaking( address _staking, bool _helper ) external onlyPolicy() {
+    function setStaking( address _staking, bool _helper ) external onlyOwner() {
         require( _staking != address(0) );
         if ( _helper ) {
             useHelper = true;
@@ -863,6 +955,8 @@ contract VSQBondDepository is Ownable {
             useHelper = false;
             staking = _staking;
         }
+
+        emit SetStaking( _staking, _helper );
     }
 
 
@@ -881,45 +975,56 @@ contract VSQBondDepository is Ownable {
         uint _amount, 
         uint _maxPrice,
         address _depositor
-    ) external payable returns ( uint ) {
+    ) external payable nonReentrant returns ( uint ) {
+        require( lastDecay != 0, "Cannot deposit before bond is initalized" );
+        require( _depositor == msg.sender || checkUserDepositorWhitelist( _depositor, msg.sender ), "Depositer not authorized" );
         require( _depositor != address(0), "Invalid address" );
 
         decayDebt();
-        require( totalDebt <= terms.maxDebt, "Max capacity reached" );
+
+        uint value = ITreasury( treasury ).valueOf( principle, _amount );
+        require( totalDebt.add(value) <= terms.maxDebt, "Max capacity reached" );
         
         uint priceInUSD = bondPriceInUSD(); // Stored in bond info
         uint nativePrice = _bondPrice();
 
         require( _maxPrice >= nativePrice, "Slippage limit: more than max price" ); // slippage protection
 
-        uint value = ITreasury( treasury ).valueOf( principle, _amount );
         uint payout = payoutFor( value ); // payout to bonder is computed
 
         require( payout >= 10000000, "Bond too small" ); // must be > 0.01 VSQ ( underflow protection )
         require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
 
+        // total debt is increased
+        totalDebt = totalDebt.add( value );
+
         /**
             asset carries risk and is not minted against
             asset transfered to treasury and rewards minted as payout
          */
-        if (address(this).balance >= _amount) {
+        if (msg.value >= _amount) {
             // pay with WETH9
-            IWETH9(principle).deposit{value: _amount}(); // wrap only what is needed to pay
-            IWETH9(principle).transfer(treasury, _amount);
+            IWETH9( principle ).deposit{value: _amount}(); // wrap only what is needed to pay
+            IWETH9( principle ).safeTransfer(treasury, _amount);
         } else {
             IERC20( principle ).safeTransferFrom( msg.sender, treasury, _amount );
         }
-        
+
+        // mint rewards
         ITreasury( treasury ).mintRewards( address(this), payout );
         
-        // total debt is increased
-        totalDebt = totalDebt.add( value ); 
-                
+        // refund user if needed
+        uint256 refundAmount = msg.value >= _amount ? msg.value.sub( _amount ) : msg.value;
+        if (refundAmount > 0) safeTransferETH(msg.sender, refundAmount);
+
+        // unaccounted for eth can goto DAO
+        if (address(this).balance > 0) safeTransferETH(DAO, refundAmount);
+
         // depositor info is stored
         bondInfo[ _depositor ] = Bond({ 
             payout: bondInfo[ _depositor ].payout.add( payout ),
             vesting: terms.vestingTerm,
-            lastTime: uint32(block.timestamp),
+            lastTime: block.timestamp,
             pricePaid: priceInUSD
         });
 
@@ -928,7 +1033,6 @@ contract VSQBondDepository is Ownable {
         emit BondPriceChanged( bondPriceInUSD(), _bondPrice(), debtRatio() );
 
         adjust(); // control variable is adjusted
-        refundETH(); //refund user if needed
         return payout; 
     }
 
@@ -938,9 +1042,12 @@ contract VSQBondDepository is Ownable {
      *  @param _stake bool
      *  @return uint
      */ 
-    function redeem( address _recipient, bool _stake ) external returns ( uint ) {        
+    function redeem( address _recipient, bool _stake ) external returns ( uint ) {  
+        require( _recipient == msg.sender || checkUserDepositorWhitelist( _recipient, msg.sender ), "Redeemer not authorized" );
+        require( _recipient != address(0), "Invalid address" );
+      
         Bond memory info = bondInfo[ _recipient ];
-        uint percentVested = percentVestedFor( _recipient ); // (blocks since last interaction / vesting term remaining)
+        uint percentVested = percentVestedFor( _recipient ); // (time since last interaction / vesting term remaining)
 
         if ( percentVested >= 10000 ) { // if fully vested
             delete bondInfo[ _recipient ]; // delete user info
@@ -954,8 +1061,8 @@ contract VSQBondDepository is Ownable {
             // store updated deposit info
             bondInfo[ _recipient ] = Bond({
                 payout: info.payout.sub( payout ),
-                vesting: info.vesting.sub32( uint32( block.timestamp ).sub32( info.lastTime ) ),
-                lastTime: uint32( block.timestamp ),
+                vesting: info.vesting.sub( block.timestamp.sub( info.lastTime ) ),
+                lastTime: block.timestamp,
                 pricePaid: info.pricePaid
             });
 
@@ -977,7 +1084,7 @@ contract VSQBondDepository is Ownable {
      */
     function stakeOrSend( address _recipient, bool _stake, uint _amount ) internal returns ( uint ) {
         if ( !_stake ) { // if user does not want to stake
-            IERC20( VSQ ).transfer( _recipient, _amount ); // send payout
+            IERC20( VSQ ).safeTransfer( _recipient, _amount ); // send payout
         } else { // if user wants to stake
             if ( useHelper ) { // use if staking warmup is 0
                 IERC20( VSQ ).approve( stakingHelper, _amount );
@@ -991,6 +1098,19 @@ contract VSQBondDepository is Ownable {
     }
 
     /**
+     *  @notice get the staking permissions for a users account
+     *  @param recipient address
+     *  @param sender address
+     */
+    function checkUserDepositorWhitelist( address recipient, address sender ) internal returns ( bool ) {
+        if ( useHelper ) { // use if staking warmup is 0
+            return IStakingHelper( stakingHelper ).checkUserDepositorWhitelist( recipient, sender );
+        } else {
+            return IStaking( staking ).checkUserDepositorWhitelist( recipient, sender );
+        }
+    }
+
+    /**
      *  @notice makes incremental adjustment to control variable
      */
     function adjust() internal {
@@ -1000,15 +1120,19 @@ contract VSQBondDepository is Ownable {
             if ( adjustment.add ) {
                 terms.controlVariable = terms.controlVariable.add( adjustment.rate );
                 if ( terms.controlVariable >= adjustment.target ) {
+                    terms.controlVariable = adjustment.target;
+                    adjustment.target = 0;
                     adjustment.rate = 0;
                 }
             } else {
-                terms.controlVariable = terms.controlVariable.sub( adjustment.rate );
+                terms.controlVariable = terms.controlVariable > adjustment.rate ? terms.controlVariable.sub( adjustment.rate ) : 0;
                 if ( terms.controlVariable <= adjustment.target ) {
+                    terms.controlVariable = adjustment.target;
+                    adjustment.target = 0;
                     adjustment.rate = 0;
                 }
             }
-            adjustment.lastTime = uint32(block.timestamp);
+            adjustment.lastTime = block.timestamp;
             emit ControlVariableAdjustment( initial, terms.controlVariable, adjustment.rate, adjustment.add );
         }
     }
@@ -1018,7 +1142,7 @@ contract VSQBondDepository is Ownable {
      */
     function decayDebt() internal {
         totalDebt = totalDebt.sub( debtDecay() );
-        lastDecay = uint32(block.timestamp);
+        lastDecay = block.timestamp;
     }
 
 
@@ -1118,7 +1242,7 @@ contract VSQBondDepository is Ownable {
      *  @return decay_ uint
      */
     function debtDecay() public view returns ( uint decay_ ) {
-        uint32 timeSinceLast = uint32(block.timestamp).sub32( lastDecay );
+        uint256 timeSinceLast = block.timestamp.sub( lastDecay );
         decay_ = totalDebt.mul( timeSinceLast ).div( terms.vestingTerm );
         if ( decay_ > totalDebt ) {
             decay_ = totalDebt;
@@ -1133,7 +1257,7 @@ contract VSQBondDepository is Ownable {
      */
     function percentVestedFor( address _depositor ) public view returns ( uint percentVested_ ) {
         Bond memory bond = bondInfo[ _depositor ];
-        uint secondsSinceLast = uint32(block.timestamp).sub( bond.lastTime );
+        uint secondsSinceLast = block.timestamp.sub( bond.lastTime );
         uint vesting = bond.vesting;
 
         if ( vesting > 0 ) {
@@ -1171,12 +1295,13 @@ contract VSQBondDepository is Ownable {
     function recoverLostToken( address _token ) external returns ( bool ) {
         require( _token != VSQ );
         require( _token != principle );
-        IERC20( _token ).safeTransfer( DAO, IERC20( _token ).balanceOf( address(this) ) );
-        return true;
-    }
 
-    function refundETH() internal {
-        if (address(this).balance > 0) safeTransferETH(DAO, address(this).balance);
+        uint256 tokenBalance = IERC20( _token ).balanceOf( address(this) );
+
+        emit LostTokenRecovered( _token, tokenBalance );
+
+        IERC20( _token ).safeTransfer( DAO, tokenBalance );
+        return true;
     }
 
     /// @notice Transfers ETH to the recipient address

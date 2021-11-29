@@ -530,33 +530,23 @@ abstract contract ERC20
   {
 
   using SafeMath for uint256;
-
-  // TODO comment actual hash value.
-  bytes32 constant private ERC20TOKEN_ERC1820_INTERFACE_ID = keccak256( "ERC20Token" );
     
-  // Present in ERC777
   mapping (address => uint256) internal _balances;
 
-  // Present in ERC777
   mapping (address => mapping (address => uint256)) internal _allowances;
 
-  // Present in ERC777
   uint256 internal _totalSupply;
 
-  // Present in ERC777
   string internal _name;
     
-  // Present in ERC777
   string internal _symbol;
     
-  // Present in ERC777
-  uint8 internal _decimals;
+  uint8 internal immutable _decimals;
 
   /**
    * @dev Sets the values for {name} and {symbol}, initializes {decimals} with
    * a default value of 18.
    *
-   * To select a different value for {decimals}, use {_setupDecimals}.
    *
    * All three of these values are immutable: they can only be set once during
    * construction.
@@ -570,7 +560,6 @@ abstract contract ERC20
   /**
    * @dev Returns the name of the token.
    */
-  // Present in ERC777
   function name() public view returns (string memory) {
     return _name;
   }
@@ -579,7 +568,6 @@ abstract contract ERC20
    * @dev Returns the symbol of the token, usually a shorter version of the
    * name.
    */
-  // Present in ERC777
   function symbol() public view returns (string memory) {
     return _symbol;
   }
@@ -590,14 +578,12 @@ abstract contract ERC20
    * be displayed to a user as `5,05` (`505 / 10 ** 2`).
    *
    * Tokens usually opt for a value of 18, imitating the relationship between
-   * Ether and Wei. This is the value {ERC20} uses, unless {_setupDecimals} is
-   * called.
+   * Ether and Wei. This is the value {ERC20} uses.
    *
    * NOTE: This information is only used for _display_ purposes: it in
    * no way affects any of the arithmetic of the contract, including
    * {IERC20-balanceOf} and {IERC20-transfer}.
    */
-  // Present in ERC777
   function decimals() public view returns (uint8) {
     return _decimals;
   }
@@ -605,7 +591,6 @@ abstract contract ERC20
   /**
    * @dev See {IERC20-totalSupply}.
    */
-  // Present in ERC777
   function totalSupply() public view override returns (uint256) {
     return _totalSupply;
   }
@@ -613,7 +598,6 @@ abstract contract ERC20
   /**
    * @dev See {IERC20-balanceOf}.
    */
-  // Present in ERC777
   function balanceOf(address account) public view virtual override returns (uint256) {
     return _balances[account];
   }
@@ -636,7 +620,6 @@ abstract contract ERC20
     /**
      * @dev See {IERC20-allowance}.
      */
-    // Present in ERC777
     function allowance(address owner, address spender) public view virtual override returns (uint256) {
         return _allowances[owner][spender];
     }
@@ -648,7 +631,6 @@ abstract contract ERC20
      *
      * - `spender` cannot be the zero address.
      */
-    // Present in ERC777
     function approve(address spender, uint256 amount) public virtual override returns (bool) {
         _approve(msg.sender, spender, amount);
         return true;
@@ -667,7 +649,6 @@ abstract contract ERC20
      * - the caller must have allowance for ``sender``'s tokens of at least
      * `amount`.
      */
-    // Present in ERC777
     function transferFrom(address sender, address recipient, uint256 amount) public virtual override returns (bool) {
         _transfer(sender, recipient, amount);
         _approve(sender, msg.sender, _allowances[sender][msg.sender]
@@ -746,13 +727,12 @@ abstract contract ERC20
      *
      * - `to` cannot be the zero address.
      */
-    // Present in ERC777
     function _mint(address account_, uint256 ammount_) internal virtual {
         require(account_ != address(0), "ERC20: mint to the zero address");
         _beforeTokenTransfer(address( this ), account_, ammount_);
         _totalSupply = _totalSupply.add(ammount_);
         _balances[account_] = _balances[account_].add(ammount_);
-        emit Transfer(address( this ), account_, ammount_);
+        emit Transfer(address( 0 ), account_, ammount_);
     }
 
     /**
@@ -766,7 +746,6 @@ abstract contract ERC20
      * - `account` cannot be the zero address.
      * - `account` must have at least `amount` tokens.
      */
-    // Present in ERC777
     function _burn(address account, uint256 amount) internal virtual {
         require(account != address(0), "ERC20: burn from the zero address");
 
@@ -790,7 +769,6 @@ abstract contract ERC20
      * - `owner` cannot be the zero address.
      * - `spender` cannot be the zero address.
      */
-    // Present in ERC777
     function _approve(address owner, address spender, uint256 amount) internal virtual {
         require(owner != address(0), "ERC20: approve from the zero address");
         require(spender != address(0), "ERC20: approve to the zero address");
@@ -821,7 +799,6 @@ abstract contract ERC20
    *
    * To learn more about hooks, head to xref:ROOT:extending-contracts.adoc#using-hooks[Using Hooks].
    */
-  // Present in ERC777
   function _beforeTokenTransfer( address from_, address to_, uint256 amount_ ) internal virtual { }
 }
 
@@ -900,7 +877,7 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
     // keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
     bytes32 public constant PERMIT_TYPEHASH = 0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9;
 
-    bytes32 public DOMAIN_SEPARATOR;
+    bytes32 public immutable DOMAIN_SEPARATOR;
 
     constructor() {
 
@@ -925,7 +902,7 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
     function permit(
         address owner,
         address spender,
-        uint256 amount,
+        uint256 value,
         uint256 deadline,
         uint8 v,
         bytes32 r,
@@ -934,7 +911,7 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
         require(block.timestamp <= deadline, "Permit: expired deadline");
 
         bytes32 hashStruct =
-            keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, amount, _nonces[owner].current(), deadline));
+            keccak256(abi.encode(PERMIT_TYPEHASH, owner, spender, value, _nonces[owner].current(), deadline));
 
         bytes32 _hash = keccak256(abi.encodePacked(uint16(0x1901), DOMAIN_SEPARATOR, hashStruct));
 
@@ -942,7 +919,7 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
         require(signer != address(0) && signer == owner, "ZeroSwapPermit: Invalid signature");
 
         _nonces[owner].increment();
-        _approve(owner, spender, amount);
+        _approve(owner, spender, value);
     }
 
     /**
@@ -953,62 +930,74 @@ abstract contract ERC20Permit is ERC20, IERC2612Permit {
     }
 }
 
-interface IOwnable {
-  function manager() external view returns (address);
+// Audit on 5-Jan-2021 by Keno and BoringCrypto
+// Source: https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol + Claimable.sol
+// Edited by BoringCrypto
 
-  function renounceManagement() external;
-  
-  function pushManagement( address newOwner_ ) external;
-  
-  function pullManagement() external;
+contract BoringOwnableData {
+    address public owner;
+    address public pendingOwner;
 }
 
-contract Ownable is IOwnable {
+contract BoringOwnable is BoringOwnableData {
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-    address internal _owner;
-    address internal _newOwner;
-
-    event OwnershipPushed(address indexed previousOwner, address indexed newOwner);
-    event OwnershipPulled(address indexed previousOwner, address indexed newOwner);
-
-    constructor () {
-        _owner = msg.sender;
-        emit OwnershipPushed( address(0), _owner );
+    /// @notice `owner` defaults to msg.sender on construction.
+    constructor() public {
+        owner = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
     }
 
-    function manager() public view override returns (address) {
-        return _owner;
+    /// @notice Transfers ownership to `newOwner`. Either directly or claimable by the new pending owner.
+    /// Can only be invoked by the current `owner`.
+    /// @param newOwner Address of the new owner.
+    /// @param direct True if `newOwner` should be set immediately. False if `newOwner` needs to use `claimOwnership`.
+    /// @param renounce Allows the `newOwner` to be `address(0)` if `direct` and `renounce` is True. Has no effect otherwise.
+    function transferOwnership(
+        address newOwner,
+        bool direct,
+        bool renounce
+    ) public onlyOwner {
+        if (direct) {
+            // Checks
+            require(newOwner != address(0) || renounce, "Ownable: zero address");
+
+            // Effects
+            emit OwnershipTransferred(owner, newOwner);
+            owner = newOwner;
+            pendingOwner = address(0);
+        } else {
+            // Effects
+            pendingOwner = newOwner;
+        }
     }
 
-    modifier onlyManager() {
-        require( _owner == msg.sender, "Ownable: caller is not the owner" );
+    /// @notice Needs to be called by `pendingOwner` to claim ownership.
+    function claimOwnership() public {
+        address _pendingOwner = pendingOwner;
+
+        // Checks
+        require(msg.sender == _pendingOwner, "Ownable: caller != pending owner");
+
+        // Effects
+        emit OwnershipTransferred(owner, _pendingOwner);
+        owner = _pendingOwner;
+        pendingOwner = address(0);
+    }
+
+    /// @notice Only allows the `owner` to execute the function.
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Ownable: caller is not the owner");
         _;
     }
-
-    function renounceManagement() public virtual override onlyManager() {
-        emit OwnershipPushed( _owner, address(0) );
-        _owner = address(0);
-    }
-
-    function pushManagement( address newOwner_ ) public virtual override onlyManager() {
-        require( newOwner_ != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipPushed( _owner, newOwner_ );
-        _newOwner = newOwner_;
-    }
-    
-    function pullManagement() public virtual override {
-        require( msg.sender == _newOwner, "Ownable: must be new owner to pull");
-        emit OwnershipPulled( _owner, _newOwner );
-        _owner = _newOwner;
-    }
 }
 
-contract sVSQ is ERC20Permit, Ownable {
+contract sVSQ is ERC20Permit, BoringOwnable {
 
     using SafeMath for uint256;
 
     modifier onlyStakingContract() {
-        require( msg.sender == stakingContract );
+        require( msg.sender == stakingContract, "Only staking contract can call" );
         _;
     }
 
@@ -1018,6 +1007,7 @@ contract sVSQ is ERC20Permit, Ownable {
     event LogSupply(uint256 indexed epoch, uint256 timestamp, uint256 totalSupply );
     event LogRebase( uint256 indexed epoch, uint256 rebase, uint256 index );
     event LogStakingContractUpdated( address stakingContract );
+    event SetIndex( uint256 INDEX, uint256 newINDEX );
 
     struct Rebase {
         uint epoch;
@@ -1026,7 +1016,7 @@ contract sVSQ is ERC20Permit, Ownable {
         uint totalStakedAfter;
         uint amountRebased;
         uint index;
-        uint32 timeOccured;
+        uint256 timeOccured;
     }
     Rebase[] public rebases;
 
@@ -1054,8 +1044,8 @@ contract sVSQ is ERC20Permit, Ownable {
     }
 
     function initialize( address stakingContract_ ) external returns ( bool ) {
-        require( msg.sender == initializer );
-        require( stakingContract_ != address(0) );
+        require( msg.sender == initializer, "Only initializer can call" );
+        require( stakingContract_ != address(0), "Staking contract is 0 address" );
         stakingContract = stakingContract_;
         _gonBalances[ stakingContract ] = TOTAL_GONS;
 
@@ -1066,10 +1056,11 @@ contract sVSQ is ERC20Permit, Ownable {
         return true;
     }
 
-    function setIndex( uint _INDEX ) external onlyManager() returns ( bool ) {
-        require( INDEX == 0 );
+    function setIndex( uint _INDEX ) external onlyOwner() {
+        require( INDEX == 0, "INDEX not 0" );
         INDEX = gonsForBalance( _INDEX );
-        return true;
+
+        emit SetIndex( _INDEX, INDEX );
     }
 
     /**
@@ -1121,7 +1112,7 @@ contract sVSQ is ERC20Permit, Ownable {
             totalStakedAfter: circulatingSupply(),
             amountRebased: profit_,
             index: index(),
-            timeOccured: uint32(block.timestamp)
+            timeOccured: block.timestamp
         }));
         
         emit LogSupply( epoch_, block.timestamp, _totalSupply );

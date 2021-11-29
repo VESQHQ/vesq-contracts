@@ -128,53 +128,65 @@ library Address {
     }
 }
 
-interface IOwnable {
-  function manager() external view returns (address);
+// Audit on 5-Jan-2021 by Keno and BoringCrypto
+// Source: https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol + Claimable.sol
+// Edited by BoringCrypto
 
-  function renounceManagement() external;
-  
-  function pushManagement( address newOwner_ ) external;
-  
-  function pullManagement() external;
+contract BoringOwnableData {
+    address public owner;
+    address public pendingOwner;
 }
 
-contract Ownable is IOwnable {
+contract BoringOwnable is BoringOwnableData {
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-    address internal _owner;
-    address internal _newOwner;
-
-    event OwnershipPushed(address indexed previousOwner, address indexed newOwner);
-    event OwnershipPulled(address indexed previousOwner, address indexed newOwner);
-
-    constructor () {
-        _owner = msg.sender;
-        emit OwnershipPushed( address(0), _owner );
+    /// @notice `owner` defaults to msg.sender on construction.
+    constructor() public {
+        owner = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
     }
 
-    function manager() public view override returns (address) {
-        return _owner;
+    /// @notice Transfers ownership to `newOwner`. Either directly or claimable by the new pending owner.
+    /// Can only be invoked by the current `owner`.
+    /// @param newOwner Address of the new owner.
+    /// @param direct True if `newOwner` should be set immediately. False if `newOwner` needs to use `claimOwnership`.
+    /// @param renounce Allows the `newOwner` to be `address(0)` if `direct` and `renounce` is True. Has no effect otherwise.
+    function transferOwnership(
+        address newOwner,
+        bool direct,
+        bool renounce
+    ) public onlyOwner {
+        if (direct) {
+            // Checks
+            require(newOwner != address(0) || renounce, "Ownable: zero address");
+
+            // Effects
+            emit OwnershipTransferred(owner, newOwner);
+            owner = newOwner;
+            pendingOwner = address(0);
+        } else {
+            // Effects
+            pendingOwner = newOwner;
+        }
     }
 
-    modifier onlyManager() {
-        require( _owner == msg.sender, "Ownable: caller is not the owner" );
+    /// @notice Needs to be called by `pendingOwner` to claim ownership.
+    function claimOwnership() public {
+        address _pendingOwner = pendingOwner;
+
+        // Checks
+        require(msg.sender == _pendingOwner, "Ownable: caller != pending owner");
+
+        // Effects
+        emit OwnershipTransferred(owner, _pendingOwner);
+        owner = _pendingOwner;
+        pendingOwner = address(0);
+    }
+
+    /// @notice Only allows the `owner` to execute the function.
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Ownable: caller is not the owner");
         _;
-    }
-
-    function renounceManagement() public virtual override onlyManager() {
-        emit OwnershipPushed( _owner, address(0) );
-        _owner = address(0);
-    }
-
-    function pushManagement( address newOwner_ ) public virtual override onlyManager() {
-        require( newOwner_ != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipPushed( _owner, newOwner_ );
-        _newOwner = newOwner_;
-    }
-    
-    function pullManagement() public virtual override {
-        require( msg.sender == _newOwner, "Ownable: must be new owner to pull");
-        emit OwnershipPulled( _owner, _newOwner );
-        _owner = _newOwner;
     }
 }
 
@@ -228,23 +240,22 @@ interface IVSQERC20 {
 }
 
 interface IBondCalculator {
-  function valuation( address pair_, uint amount_ ) external view returns ( uint _value );
+  function valuation( address pair_, uint256 amount_ ) external view returns ( uint256 _value );
 }
 
-contract VSQTreasury is Ownable {
+contract VSQTreasury is BoringOwnable {
 
-    using SafeMath for uint;
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
-    event Deposit( address indexed token, uint amount, uint value );
-    event Withdrawal( address indexed token, uint amount, uint value );
-    event CreateDebt( address indexed debtor, address indexed token, uint amount, uint value );
-    event RepayDebt( address indexed debtor, address indexed token, uint amount, uint value );
-    event ReservesManaged( address indexed token, uint amount );
-    event ReservesUpdated( uint indexed totalReserves );
-    event ReservesAudited( uint indexed totalReserves );
-    event RewardsMinted( address indexed caller, address indexed recipient, uint amount );
+    event Deposit( address indexed token, uint256 amount, uint256 value );
+    event Withdrawal( address indexed token, uint256 amount, uint256 value );
+    event CreateDebt( address indexed debtor, address indexed token, uint256 amount, uint256 value );
+    event RepayDebt( address indexed debtor, address indexed token, uint256 amount, uint256 value );
+    event ReservesManaged( address indexed token, uint256 amount );
+    event ReservesUpdated( uint256 indexed totalReserves );
+    event ReservesAudited( uint256 indexed totalReserves );
+    event RewardsMinted( address indexed caller, address indexed recipient, uint256 amount );
     event ChangeQueued( MANAGING indexed managing, address queued );
     event ChangeActivated( MANAGING indexed managing, address activated, bool result );
 
@@ -297,17 +308,17 @@ contract VSQTreasury is Ownable {
     address[] public debtors; // Push only, beware false-positives. Only for viewing.
     mapping( address => bool ) public isDebtor;
     mapping( address => uint256 ) public debtorQueue; // Delays changes to mapping.
-    mapping( address => uint ) public debtorBalance;
+    mapping( address => uint256 ) public debtorBalance;
 
     address[] public rewardManagers; // Push only, beware false-positives. Only for viewing.
     mapping( address => bool ) public isRewardManager;
     mapping( address => uint256 ) public rewardManagerQueue; // Delays changes to mapping.
 
     address public sVSQ;
-    uint public sVSQQueue; // Delays change to sVSQ address
+    uint256 public sVSQQueue; // Delays change to sVSQ address
     
-    uint public totalReserves; // Risk-free value of all assets
-    uint public totalDebt;
+    uint256 public totalReserves; // Risk-free value of all assets
+    uint256 public totalDebt;
 
     constructor (
         address _VSQ,
@@ -328,12 +339,12 @@ contract VSQTreasury is Ownable {
 
     /**
         @notice allow approved address to deposit an asset for VSQ
-        @param _amount uint
+        @param _amount uint256
         @param _token address
-        @param _profit uint
-        @return send_ uint
+        @param _profit uint256
+        @return send_ uint256
      */
-    function deposit( uint _amount, address _token, uint _profit ) external returns ( uint send_ ) {
+    function deposit( uint256 _amount, address _token, uint256 _profit ) external returns ( uint256 send_ ) {
         require( isReserveToken[ _token ] || isLiquidityToken[ _token ], "Not accepted" );
         IERC20( _token ).safeTransferFrom( msg.sender, address(this), _amount );
 
@@ -343,7 +354,7 @@ contract VSQTreasury is Ownable {
             require( isLiquidityDepositor[ msg.sender ], "Not approved" );
         }
 
-        uint value = valueOf(_token, _amount);
+        uint256 value = valueOf(_token, _amount);
         // mint VSQ needed and store amount of rewards for distribution
         send_ = value.sub( _profit );
         IERC20Mintable( VSQ ).mint( msg.sender, send_ );
@@ -356,14 +367,14 @@ contract VSQTreasury is Ownable {
 
     /**
         @notice allow approved address to burn VSQ for reserves
-        @param _amount uint
+        @param _amount uint256
         @param _token address
      */
-    function withdraw( uint _amount, address _token ) external {
+    function withdraw( uint256 _amount, address _token ) external {
         require( isReserveToken[ _token ], "Not accepted" ); // Only reserves can be used for redemptions
-        require( isReserveSpender[ msg.sender ] == true, "Not approved" );
+        require( isReserveSpender[ msg.sender ], "Not approved" );
 
-        uint value = valueOf( _token, _amount );
+        uint256 value = valueOf( _token, _amount );
         IVSQERC20( VSQ ).burnFrom( msg.sender, value );
 
         totalReserves = totalReserves.sub( value );
@@ -376,17 +387,17 @@ contract VSQTreasury is Ownable {
 
     /**
         @notice allow approved address to borrow reserves
-        @param _amount uint
+        @param _amount uint256
         @param _token address
      */
-    function incurDebt( uint _amount, address _token ) external {
+    function incurDebt( uint256 _amount, address _token ) external {
         require( isDebtor[ msg.sender ], "Not approved" );
         require( isReserveToken[ _token ], "Not accepted" );
 
-        uint value = valueOf( _token, _amount );
+        uint256 value = valueOf( _token, _amount );
 
-        uint maximumDebt = IERC20( sVSQ ).balanceOf( msg.sender ); // Can only borrow against sVSQ held
-        uint availableDebt = maximumDebt.sub( debtorBalance[ msg.sender ] );
+        uint256 maximumDebt = IERC20( sVSQ ).balanceOf( msg.sender ); // Can only borrow against sVSQ held
+        uint256 availableDebt = maximumDebt.sub( debtorBalance[ msg.sender ] );
         require( value <= availableDebt, "Exceeds debt limit" );
 
         debtorBalance[ msg.sender ] = debtorBalance[ msg.sender ].add( value );
@@ -395,23 +406,23 @@ contract VSQTreasury is Ownable {
         totalReserves = totalReserves.sub( value );
         emit ReservesUpdated( totalReserves );
 
-        IERC20( _token ).transfer( msg.sender, _amount );
+        IERC20( _token ).safeTransfer( msg.sender, _amount );
         
         emit CreateDebt( msg.sender, _token, _amount, value );
     }
 
     /**
         @notice allow approved address to repay borrowed reserves with reserves
-        @param _amount uint
+        @param _amount uint256
         @param _token address
      */
-    function repayDebtWithReserve( uint _amount, address _token ) external {
+    function repayDebtWithReserve( uint256 _amount, address _token ) external {
         require( isDebtor[ msg.sender ], "Not approved" );
         require( isReserveToken[ _token ], "Not accepted" );
 
         IERC20( _token ).safeTransferFrom( msg.sender, address(this), _amount );
 
-        uint value = valueOf( _token, _amount );
+        uint256 value = valueOf( _token, _amount );
         debtorBalance[ msg.sender ] = debtorBalance[ msg.sender ].sub( value );
         totalDebt = totalDebt.sub( value );
 
@@ -423,10 +434,10 @@ contract VSQTreasury is Ownable {
 
     /**
         @notice allow approved address to repay borrowed reserves with VSQ
-        @param _amount uint
+        @param _amount uint256
      */
-    function repayDebtWithVSQ( uint _amount ) external {
-        require( isDebtor[ msg.sender ], "Not approved" );
+    function repayDebtWithOHM( uint256 _amount ) external {
+        require( isDebtor[ msg.sender ] && isReserveSpender[ msg.sender ], "Not approved" );
 
         IVSQERC20( VSQ ).burnFrom( msg.sender, _amount );
 
@@ -439,17 +450,19 @@ contract VSQTreasury is Ownable {
     /**
         @notice allow approved address to withdraw assets
         @param _token address
-        @param _amount uint
+        @param _amount uint256
      */
-    function manage( address _token, uint _amount ) external {
+    function manage( address _token, uint256 _amount ) external {
         if( isLiquidityToken[ _token ] ) {
             require( isLiquidityManager[ msg.sender ], "Not approved" );
         } else {
             require( isReserveManager[ msg.sender ], "Not approved" );
         }
 
-        uint value = valueOf(_token, _amount);
-        require( value <= excessReserves(), "Insufficient reserves" );
+        uint256 value = valueOf(_token, _amount);
+
+        if ( isLiquidityToken[ _token ] || isReserveToken[ _token ])
+            require( value <= excessReserves(), "Insufficient reserves" );
 
         totalReserves = totalReserves.sub( value );
         emit ReservesUpdated( totalReserves );
@@ -462,7 +475,7 @@ contract VSQTreasury is Ownable {
     /**
         @notice send epoch reward to staking contract
      */
-    function mintRewards( address _recipient, uint _amount ) external {
+    function mintRewards( address _recipient, uint256 _amount ) external {
         require( isRewardManager[ msg.sender ], "Not approved" );
         require( _amount <= excessReserves(), "Insufficient reserves" );
 
@@ -473,9 +486,9 @@ contract VSQTreasury is Ownable {
 
     /**
         @notice returns excess reserves not backing tokens
-        @return uint
+        @return uint256
      */
-    function excessReserves() public view returns ( uint ) {
+    function excessReserves() public view returns ( uint256 ) {
         return totalReserves.sub( IERC20( VSQ ).totalSupply().sub( totalDebt ) );
     }
 
@@ -483,14 +496,14 @@ contract VSQTreasury is Ownable {
         @notice takes inventory of all tracked assets
         @notice always consolidate to recognized reserves before audit
      */
-    function auditReserves() external onlyManager() {
-        uint reserves;
-        for( uint i = 0; i < reserveTokens.length; i++ ) {
+    function auditReserves() external onlyOwner() {
+        uint256 reserves;
+        for( uint256 i = 0; i < reserveTokens.length; i++ ) {
             reserves = reserves.add ( 
                 valueOf( reserveTokens[ i ], IERC20( reserveTokens[ i ] ).balanceOf( address(this) ) )
             );
         }
-        for( uint i = 0; i < liquidityTokens.length; i++ ) {
+        for( uint256 i = 0; i < liquidityTokens.length; i++ ) {
             reserves = reserves.add (
                 valueOf( liquidityTokens[ i ], IERC20( liquidityTokens[ i ] ).balanceOf( address(this) ) )
             );
@@ -503,10 +516,10 @@ contract VSQTreasury is Ownable {
     /**
         @notice returns VSQ valuation of asset
         @param _token address
-        @param _amount uint
-        @return value_ uint
+        @param _amount uint256
+        @return value_ uint256
      */
-    function valueOf( address _token, uint _amount ) public view returns ( uint value_ ) {
+    function valueOf( address _token, uint256 _amount ) public view returns ( uint256 value_ ) {
         if ( isReserveToken[ _token ] ) {
             // convert amount to match VSQ decimals
             value_ = _amount.mul( 10 ** IERC20( VSQ ).decimals() ).div( 10 ** IERC20( _token ).decimals() );
@@ -521,7 +534,7 @@ contract VSQTreasury is Ownable {
         @param _address address
         @return bool
      */
-    function queue( MANAGING _managing, address _address ) external onlyManager() returns ( bool ) {
+    function queue( MANAGING _managing, address _address ) external onlyOwner() returns ( bool ) {
         uint256 delay1x = block.timestamp.add( secondsNeededForQueue );
         uint256 delay2x = block.timestamp.add( secondsNeededForQueue.mul( 2 ) );
 
@@ -563,7 +576,7 @@ contract VSQTreasury is Ownable {
         MANAGING _managing, 
         address _address, 
         address _calculator 
-    ) external onlyManager() returns ( bool ) {
+    ) external onlyOwner() returns ( bool ) {
         require( _address != address(0) );
         bool result;
         if ( _managing == MANAGING.RESERVEDEPOSITOR ) { // 0
@@ -589,7 +602,7 @@ contract VSQTreasury is Ownable {
         } else if ( _managing == MANAGING.RESERVETOKEN ) { // 2
             if ( requirements( reserveTokenQueue, isReserveToken, _address ) ) {
                 reserveTokenQueue[ _address ] = 0;
-                if( !listContains( reserveTokens, _address ) ) {
+                if( !listContains( reserveTokens, _address ) && !listContains( liquidityTokens, _address ) ) {
                     reserveTokens.push( _address );
                 }
             }
@@ -621,7 +634,7 @@ contract VSQTreasury is Ownable {
         } else if ( _managing == MANAGING.LIQUIDITYTOKEN ) { // 5
             if ( requirements( LiquidityTokenQueue, isLiquidityToken, _address ) ) {
                 LiquidityTokenQueue[ _address ] = 0;
-                if( !listContains( liquidityTokens, _address ) ) {
+                if( !listContains( liquidityTokens, _address ) && !listContains( reserveTokens, _address ) ) {
                     liquidityTokens.push( _address );
                 }
             }
@@ -672,7 +685,7 @@ contract VSQTreasury is Ownable {
 
     /**
         @notice checks requirements and returns altered structs
-        @param queue_ mapping( address => uint )
+        @param queue_ mapping( address => uint256 )
         @param status_ mapping( address => bool )
         @param _address address
         @return bool 
@@ -696,7 +709,7 @@ contract VSQTreasury is Ownable {
         @return bool
      */
     function listContains( address[] storage _list, address _token ) internal view returns ( bool ) {
-        for( uint i = 0; i < _list.length; i++ ) {
+        for( uint256 i = 0; i < _list.length; i++ ) {
             if( _list[ i ] == _token ) {
                 return true;
             }

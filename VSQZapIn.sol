@@ -663,24 +663,15 @@ abstract contract ZapBaseV2_1 is Ownable {
     //address internal constant ZapperAdmin =
     //    0x0979d033b1610abC23B47E7864bF3164094d1A77;
 
+    event ControlActiveToggled(bool newStoppedVal);
+    event SetApprovedTarget(address target, bool isApproved);
+
     // circuit breaker modifiers
     modifier stopInEmergency {
         if (stopped) {
             revert("Paused");
         } else {
             _;
-        }
-    }
-
-    function _getBalance(address token)
-        internal
-        view
-        returns (uint256 balance)
-    {
-        if (token == address(0)) {
-            balance = address(this).balance;
-        } else {
-            balance = IERC20(token).balanceOf(address(this));
         }
     }
 
@@ -704,6 +695,8 @@ abstract contract ZapBaseV2_1 is Ownable {
     // - to Pause the contract
     function toggleContractActive() public onlyOwner {
         stopped = !stopped;
+
+        emit ControlActiveToggled( stopped );
     }
 
     function setApprovedTargets(
@@ -714,6 +707,8 @@ abstract contract ZapBaseV2_1 is Ownable {
 
         for (uint256 i = 0; i < targets.length; i++) {
             approvedTargets[targets[i]] = isApproved[i];
+
+            emit SetApprovedTarget( targets[i], isApproved[i] );
         }
     }
 
@@ -872,6 +867,11 @@ contract VSQ_ZapIn_V1 is ZapInBaseV3_1 {
     uint256 private constant deadline =
         0xf000000000000000000000000000000000000000000000000000000000000000;
 
+    event PairAddressAdded(address bondDepository, address pair);
+    event PairAddressRemoved(address bondDepository);
+    event ReserveAddressAdded(address bondDepository, address reserve);
+    event ReserveAddressRemoved(address bondDepository);
+
     constructor()
     {
         // 0x exchange
@@ -896,28 +896,36 @@ contract VSQ_ZapIn_V1 is ZapInBaseV3_1 {
         require(bondDepository != address(0), "BNA");
         require(pair != address(0), "BNA");
         allowedPairs[IVSQBondDepository(bondDepository)] = pair;
+
+        emit PairAddressAdded(bondDepository, pair);
     }
 
     function removePairAddress(address bondDepository) external onlyOwner {
         require(bondDepository != address(0), "BNA");
        
         allowedPairs[IVSQBondDepository(bondDepository)] = address(0);
+
+        emit PairAddressRemoved(bondDepository);
     }
 
     function addReserveAddress(address bondDepository, address reserve) external onlyOwner {
         require(bondDepository != address(0), "BNA");
         require(reserve != address(0), "BNA");
         allowedReserves[IVSQBondDepository(bondDepository)] = reserve;
+
+        emit ReserveAddressAdded(bondDepository, reserve);
     }
 
     function removeReserveAddress(address bondDepository) external onlyOwner {
         require(bondDepository != address(0), "BNA");
        
         allowedReserves[IVSQBondDepository(bondDepository)] = address(0);
+
+        emit ReserveAddressRemoved(bondDepository);
     }
 
     /**
-    @notice Add liquidity to Quickswap pools with ETH/ERC20 Tokens
+    @notice Add liquidity to SushiSwap pools with ETH/ERC20 Tokens
     @param _FromTokenContractAddress The ERC20 token used (address(0x00) if ether)
     @param _amount The amount of fromToken to invest
     @param _minPoolTokens Minimum quantity of pool tokens to receive. Reverts otherwise
@@ -1013,7 +1021,7 @@ contract VSQ_ZapIn_V1 is ZapInBaseV3_1 {
         address _pairAddress,
         uint256 _amount,
         address _swapTarget,
-        bytes memory swapData,
+        bytes calldata swapData,
         bool transferResidual
     ) internal returns (uint256) {
         uint256 intermediateAmt;
@@ -1105,7 +1113,7 @@ contract VSQ_ZapIn_V1 is ZapInBaseV3_1 {
         address _toTokenAddress,
         uint256 _amount,
         address _swapTarget,
-        bytes memory swapData
+        bytes calldata swapData
     ) internal returns (uint256 amountBought) {
         if (_swapTarget == wmaticTokenAddress) {
             IWETH(wmaticTokenAddress).deposit{ value: _amount }();
@@ -1138,7 +1146,7 @@ contract VSQ_ZapIn_V1 is ZapInBaseV3_1 {
         address _pairAddress,
         uint256 _amount,
         address _swapTarget,
-        bytes memory swapData
+        bytes calldata swapData
     ) internal returns (uint256 amountBought, address intermediateToken) {
         if (_swapTarget == wmaticTokenAddress) {
             IWETH(wmaticTokenAddress).deposit{ value: _amount }();

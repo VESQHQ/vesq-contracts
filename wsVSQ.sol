@@ -410,13 +410,12 @@ contract ERC20 is IERC20 {
 
     string private _name;
     string private _symbol;
-    uint8 private _decimals;
+    uint8 private immutable _decimals;
 
     /**
      * @dev Sets the values for {name} and {symbol}, initializes {decimals} with
      * a default value of 18.
      *
-     * To select a different value for {decimals}, use {_setupDecimals}.
      *
      * All three of these values are immutable: they can only be set once during
      * construction.
@@ -448,8 +447,7 @@ contract ERC20 is IERC20 {
      * be displayed to a user as `5,05` (`505 / 10 ** 2`).
      *
      * Tokens usually opt for a value of 18, imitating the relationship between
-     * Ether and Wei. This is the value {ERC20} uses, unless {_setupDecimals} is
-     * called.
+     * Ether and Wei. This is the value {ERC20} uses.
      *
      * NOTE: This information is only used for _display_ purposes: it in
      * no way affects any of the arithmetic of the contract, including
@@ -646,17 +644,6 @@ contract ERC20 is IERC20 {
     }
 
     /**
-     * @dev Sets {decimals} to a value other than the default one of 18.
-     *
-     * WARNING: This function should only be called from the constructor. Most
-     * applications that interact with token contracts will not expect
-     * {decimals} to ever change, and may work incorrectly if it does.
-     */
-    function _setupDecimals(uint8 decimals_) internal {
-        _decimals = decimals_;
-    }
-
-    /**
      * @dev Hook that is called before any transfer of tokens. This includes
      * minting and burning.
      *
@@ -746,11 +733,16 @@ interface IsVSQ {
 }
 
 contract wsVSQ is ERC20 {
+
     using SafeERC20 for ERC20;
+    using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint;
 
     address public immutable sVSQ;
+
+    event SVSQWrapped( address sender, uint256 amount, uint256 value );
+    event SVSQUnwrapped( address sender, uint256 amount, uint256 value );
 
     constructor( address _sVSQ ) ERC20( 'Wrapped sVSQ', 'wsVSQ' ) {
         require( _sVSQ != address(0) );
@@ -763,10 +755,13 @@ contract wsVSQ is ERC20 {
         @return uint
      */
     function wrap( uint _amount ) external returns ( uint ) {
-        IERC20( sVSQ ).transferFrom( msg.sender, address(this), _amount );
+        IERC20( sVSQ ).safeTransferFrom( msg.sender, address(this), _amount );
         
         uint value = sVSQTowsVSQ( _amount );
         _mint( msg.sender, value );
+
+        emit SVSQWrapped( msg.sender, _amount, value );
+
         return value;
     }
 
@@ -779,7 +774,10 @@ contract wsVSQ is ERC20 {
         _burn( msg.sender, _amount );
 
         uint value = wsVSQTosVSQ( _amount );
-        IERC20( sVSQ ).transfer( msg.sender, value );
+        IERC20( sVSQ ).safeTransfer( msg.sender, value );
+
+        emit SVSQUnwrapped( msg.sender, _amount, value );
+
         return value;
     }
 

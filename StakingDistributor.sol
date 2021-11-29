@@ -2,47 +2,6 @@
 
 pragma solidity 0.7.5;
 
-library SafeERC20 {
-    using SafeMath for uint256;
-    using Address for address;
-
-    function safeTransfer(IERC20 token, address to, uint256 value) internal {
-        _callOptionalReturn(token, abi.encodeWithSelector(token.transfer.selector, to, value));
-    }
-
-    function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal {
-        _callOptionalReturn(token, abi.encodeWithSelector(token.transferFrom.selector, from, to, value));
-    }
-
-    function safeApprove(IERC20 token, address spender, uint256 value) internal {
-
-        require((value == 0) || (token.allowance(address(this), spender) == 0),
-            "SafeERC20: approve from non-zero to non-zero allowance"
-        );
-        _callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, value));
-    }
-
-    function safeIncreaseAllowance(IERC20 token, address spender, uint256 value) internal {
-        uint256 newAllowance = token.allowance(address(this), spender).add(value);
-        _callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, newAllowance));
-    }
-
-    function safeDecreaseAllowance(IERC20 token, address spender, uint256 value) internal {
-        uint256 newAllowance = token.allowance(address(this), spender)
-            .sub(value, "SafeERC20: decreased allowance below zero");
-        _callOptionalReturn(token, abi.encodeWithSelector(token.approve.selector, spender, newAllowance));
-    }
-
-    function _callOptionalReturn(IERC20 token, bytes memory data) private {
-
-        bytes memory returndata = address(token).functionCall(data, "SafeERC20: low-level call failed");
-        if (returndata.length > 0) { // Return data is optional
-            // solhint-disable-next-line max-line-length
-            require(abi.decode(returndata, (bool)), "SafeERC20: ERC20 operation did not succeed");
-        }
-    }
-}
-
 library SafeMath {
 
     function add(uint256 a, uint256 b) internal pure returns (uint256) {
@@ -309,52 +268,65 @@ library Address {
 }
 
 
-interface IPolicy {
+// Audit on 5-Jan-2021 by Keno and BoringCrypto
+// Source: https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol + Claimable.sol
+// Edited by BoringCrypto
 
-    function policy() external view returns (address);
-
-    function renouncePolicy() external;
-  
-    function pushPolicy( address newPolicy_ ) external;
-
-    function pullPolicy() external;
+contract BoringOwnableData {
+    address public owner;
+    address public pendingOwner;
 }
 
-contract Policy is IPolicy {
-    
-    address internal _policy;
-    address internal _newPolicy;
-
+contract BoringOwnable is BoringOwnableData {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
-    constructor () {
-        _policy = msg.sender;
-        emit OwnershipTransferred( address(0), _policy );
+    /// @notice `owner` defaults to msg.sender on construction.
+    constructor() public {
+        owner = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
     }
 
-    function policy() public view override returns (address) {
-        return _policy;
+    /// @notice Transfers ownership to `newOwner`. Either directly or claimable by the new pending owner.
+    /// Can only be invoked by the current `owner`.
+    /// @param newOwner Address of the new owner.
+    /// @param direct True if `newOwner` should be set immediately. False if `newOwner` needs to use `claimOwnership`.
+    /// @param renounce Allows the `newOwner` to be `address(0)` if `direct` and `renounce` is True. Has no effect otherwise.
+    function transferOwnership(
+        address newOwner,
+        bool direct,
+        bool renounce
+    ) public onlyOwner {
+        if (direct) {
+            // Checks
+            require(newOwner != address(0) || renounce, "Ownable: zero address");
+
+            // Effects
+            emit OwnershipTransferred(owner, newOwner);
+            owner = newOwner;
+            pendingOwner = address(0);
+        } else {
+            // Effects
+            pendingOwner = newOwner;
+        }
     }
 
-    modifier onlyPolicy() {
-        require( _policy == msg.sender, "Ownable: caller is not the owner" );
+    /// @notice Needs to be called by `pendingOwner` to claim ownership.
+    function claimOwnership() public {
+        address _pendingOwner = pendingOwner;
+
+        // Checks
+        require(msg.sender == _pendingOwner, "Ownable: caller != pending owner");
+
+        // Effects
+        emit OwnershipTransferred(owner, _pendingOwner);
+        owner = _pendingOwner;
+        pendingOwner = address(0);
+    }
+
+    /// @notice Only allows the `owner` to execute the function.
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Ownable: caller is not the owner");
         _;
-    }
-
-    function renouncePolicy() public virtual override onlyPolicy() {
-        emit OwnershipTransferred( _policy, address(0) );
-        _policy = address(0);
-    }
-
-    function pushPolicy( address newPolicy_ ) public virtual override onlyPolicy() {
-        require( newPolicy_ != address(0), "Ownable: new owner is the zero address");
-        _newPolicy = newPolicy_;
-    }
-
-    function pullPolicy() public virtual override {
-        require( msg.sender == _newPolicy );
-        emit OwnershipTransferred( _policy, _newPolicy );
-        _policy = _newPolicy;
     }
 }
 
@@ -362,22 +334,24 @@ interface ITreasury {
     function mintRewards( address _recipient, uint _amount ) external;
 }
 
-contract Distributor is Policy {
+contract Distributor is BoringOwnable {
+
     using SafeMath for uint;
-    using SafeMath for uint32;
-    using SafeERC20 for IERC20;
-    
-    
+
     
     /* ====== VARIABLES ====== */
 
     address public immutable VSQ;
     address public immutable treasury;
     
-    uint32 public immutable epochLength;
-    uint32 public nextEpochTime;
+    uint256 public immutable epochLength;
+    uint256 public nextEpochTime;
     
     mapping( uint => Adjust ) public adjustments;
+
+    uint256 public constant MAX_RECIPIENTS = 5;
+    // 5% of supply
+    uint256 public constant MAX_RATE = 5e4;
     
     
     /* ====== STRUCTS ====== */
@@ -393,12 +367,16 @@ contract Distributor is Policy {
         uint rate;
         uint target;
     }
-    
-    
+
+    event Distributed( address recipient, uint256 amount );
+    event Adjusted( bool adding, uint256 newRate, uint256 step );
+    event RecipientAdded( address recipient, uint256 rewardRate );
+    event RecipientRemoved( address recipient, uint256 index );
+    event SetAdjustment( uint _index, bool _add, uint _rate, uint _target );
     
     /* ====== CONSTRUCTOR ====== */
 
-    constructor( address _treasury, address _vsq, uint32 _epochLength, uint32 _nextEpochTime ) {        
+    constructor( address _treasury, address _vsq, uint256 _epochLength, uint256 _nextEpochTime ) {        
         require( _treasury != address(0) );
         treasury = _treasury;
         require( _vsq != address(0) );
@@ -415,19 +393,24 @@ contract Distributor is Policy {
         @notice send epoch reward to staking contract
      */
     function distribute() external returns ( bool ) {
-        if ( nextEpochTime <= uint32(block.timestamp) ) {
-            nextEpochTime = nextEpochTime.add32( epochLength ); // set next epoch time
+        if ( nextEpochTime <= block.timestamp ) {
+            nextEpochTime = nextEpochTime.add( epochLength ); // set next epoch time
             
             // distribute rewards to each recipient
             for ( uint i = 0; i < info.length; i++ ) {
                 if ( info[ i ].rate > 0 ) {
+                    uint256 amount = nextRewardAt( info[ i ].rate ) ;
                     ITreasury( treasury ).mintRewards( // mint and send from treasury
                         info[ i ].recipient, 
-                        nextRewardAt( info[ i ].rate ) 
+                        amount
                     );
+
+                    emit Distributed( info[ i ].recipient, amount );
+
                     adjust( i ); // check for adjustment
                 }
             }
+
             return true;
         } else { 
             return false; 
@@ -447,14 +430,18 @@ contract Distributor is Policy {
             if ( adjustment.add ) { // if rate should increase
                 info[ _index ].rate = info[ _index ].rate.add( adjustment.rate ); // raise rate
                 if ( info[ _index ].rate >= adjustment.target ) { // if target met
-                    adjustments[ _index ].rate = 0; // turn off adjustment
+                    info[ _index ].rate = adjustment.target;
+                    delete adjustments[ _index ];
                 }
             } else { // if rate should decrease
-                info[ _index ].rate = info[ _index ].rate.sub( adjustment.rate ); // lower rate
+                info[ _index ].rate = info[ _index ].rate > adjustment.rate ? info[ _index ].rate.sub( adjustment.rate ) : 0; // lower rate
                 if ( info[ _index ].rate <= adjustment.target ) { // if target met
-                    adjustments[ _index ].rate = 0; // turn off adjustment
+                    info[ _index ].rate = adjustment.target;
+                    delete adjustments[ _index ];
                 }
             }
+
+            emit Adjusted( adjustment.add, info[ _index ].rate, adjustment.rate );
         }
     }
     
@@ -476,7 +463,7 @@ contract Distributor is Policy {
         @param _recipient address
         @return uint
      */
-    function nextRewardFor( address _recipient ) public view returns ( uint ) {
+    function nextRewardFor( address _recipient ) external view returns ( uint ) {
         uint reward;
         for ( uint i = 0; i < info.length; i++ ) {
             if ( info[ i ].recipient == _recipient ) {
@@ -495,12 +482,17 @@ contract Distributor is Policy {
         @param _recipient address
         @param _rewardRate uint
      */
-    function addRecipient( address _recipient, uint _rewardRate ) external onlyPolicy() {
+    function addRecipient( address _recipient, uint _rewardRate ) external onlyOwner() {
         require( _recipient != address(0) );
+        require( info.length <= MAX_RECIPIENTS, "Can only have a max of 5 recipients!" );
+        require( _rewardRate <= MAX_RATE, "_rewardRate too high" );
+
         info.push( Info({
             recipient: _recipient,
             rate: _rewardRate
         }));
+
+        emit RecipientAdded( _recipient, _rewardRate );
     }
 
     /**
@@ -508,10 +500,21 @@ contract Distributor is Policy {
         @param _index uint
         @param _recipient address
      */
-    function removeRecipient( uint _index, address _recipient ) external onlyPolicy() {
-        require( _recipient == info[ _index ].recipient );
-        info[ _index ].recipient = address(0);
-        info[ _index ].rate = 0;
+    function removeRecipient( uint _index, address _recipient ) external onlyOwner() {
+        require( _recipient == info[ _index ].recipient, "Invalid recipient" );
+        require( _index < info.length, "Index out of range" );
+
+        if ( _index < info.length - 1 ) {
+            info[ _index ] = info[ info.length - 1 ];
+            info.pop();
+
+            adjustments[ _index ] = adjustments[ info.length - 1 ];
+        } else
+            info.pop();
+
+        delete adjustments[ info.length - 1 ];
+
+        emit RecipientRemoved( _recipient, _index );
     }
 
     /**
@@ -521,11 +524,16 @@ contract Distributor is Policy {
         @param _rate uint
         @param _target uint
      */
-    function setAdjustment( uint _index, bool _add, uint _rate, uint _target ) external onlyPolicy() {
+    function setAdjustment( uint _index, bool _add, uint _rate, uint _target ) external onlyOwner() {
+        require( _rate != 0 && ( _add && info[ _index ].rate < _target ||  !_add && info[ _index ].rate > _target ), "Invalid adjustment" );
+        require( _target <= MAX_RATE, "Target rate too high" );
+
         adjustments[ _index ] = Adjust({
             add: _add,
             rate: _rate,
             target: _target
         });
+
+        emit SetAdjustment( _index, _add, _rate, _target );
     }
 }
