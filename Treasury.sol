@@ -499,14 +499,18 @@ contract VSQTreasury is BoringOwnable {
     function auditReserves() external onlyOwner() {
         uint256 reserves;
         for( uint256 i = 0; i < reserveTokens.length; i++ ) {
-            reserves = reserves.add ( 
-                valueOf( reserveTokens[ i ], IERC20( reserveTokens[ i ] ).balanceOf( address(this) ) )
-            );
+            if ( isReserveToken[ reserveTokens[ i ] ] ) {
+                reserves = reserves.add (
+                    valueOf( reserveTokens[ i ], IERC20( reserveTokens[ i ] ).balanceOf( address(this) ) )
+                );
+            }
         }
         for( uint256 i = 0; i < liquidityTokens.length; i++ ) {
-            reserves = reserves.add (
-                valueOf( liquidityTokens[ i ], IERC20( liquidityTokens[ i ] ).balanceOf( address(this) ) )
-            );
+            if ( !isReserveToken[ liquidityTokens[ i ] ] && isLiquidityToken[ liquidityTokens[ i ] ] ) {
+                reserves = reserves.add (
+                    valueOf( liquidityTokens[ i ], IERC20( liquidityTokens[ i ] ).balanceOf( address(this) ) )
+                );
+            }
         }
         totalReserves = reserves;
         emit ReservesUpdated( reserves );
@@ -602,7 +606,7 @@ contract VSQTreasury is BoringOwnable {
         } else if ( _managing == MANAGING.RESERVETOKEN ) { // 2
             if ( requirements( reserveTokenQueue, isReserveToken, _address ) ) {
                 reserveTokenQueue[ _address ] = 0;
-                if( !listContains( reserveTokens, _address ) && !listContains( liquidityTokens, _address ) ) {
+                if( !listContains( reserveTokens, _address ) ) {
                     reserveTokens.push( _address );
                 }
             }
@@ -634,7 +638,7 @@ contract VSQTreasury is BoringOwnable {
         } else if ( _managing == MANAGING.LIQUIDITYTOKEN ) { // 5
             if ( requirements( LiquidityTokenQueue, isLiquidityToken, _address ) ) {
                 LiquidityTokenQueue[ _address ] = 0;
-                if( !listContains( liquidityTokens, _address ) && !listContains( reserveTokens, _address ) ) {
+                if( !listContains( liquidityTokens, _address ) ) {
                     liquidityTokens.push( _address );
                 }
             }

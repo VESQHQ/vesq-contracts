@@ -698,6 +698,8 @@ contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
         uint _target,
         uint _buffer
     ) external onlyOwner() {
+        require( _increment != 0 && ( _addition && terms.controlVariable < _target || !_addition && terms.controlVariable > _target ),
+            "Invalid adjustment" );
         uint256 maxIncrement = terms.controlVariable.mul( 25 ).div( 1000 );
         require( _increment <= maxIncrement ||
                     maxIncrement == 0 && _increment == 1, "Increment too large" );
@@ -749,13 +751,13 @@ contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
         address _depositor
     ) external nonReentrant returns ( uint ) {
         require( lastDecay != 0, "Cannot deposit before bond is initalized" );
-        require( _depositor == msg.sender || checkUserDepositorWhitelist( _depositor, msg.sender ), "Depositor not authorized" );
+        require( _depositor == msg.sender || checkUserDepositorWhitelist( _depositor, msg.sender ), "Sender not authorized" );
         require( _depositor != address(0), "Invalid address" );
 
         decayDebt();
 
         uint value = ITreasury( treasury ).valueOf( principle, _amount );
-        require( totalDebt.add(value) <= terms.maxDebt, "Max capacity reached" );
+        require( totalDebt.add( value ) <= terms.maxDebt, "Max capacity reached" );
         
         uint priceInUSD = bondPriceInUSD(); // Stored in bond info
         uint nativePrice = _bondPrice();
@@ -765,13 +767,16 @@ contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
         uint payout = payoutFor( value ); // payout to bonder is computed
 
         require( payout >= 10000000, "Bond too small" ); // must be > 0.01 VSQ ( underflow protection )
-        require( payout <= maxPayout(), "Bond too large"); // size protection because there is no slippage
+        require( payout <= maxPayout(), "Bond too large" ); // size protection because there is no slippage
 
         // total debt is increased
         totalDebt = totalDebt.add( value );
 
         // profits are calculated
         uint fee = payout.mul( terms.fee ).div( 10000 );
+
+        require( value >= payout.add( fee ), "Bond is awaiting reconfiguration" );
+
         uint profit = value.sub( payout ).sub( fee );
 
         /**

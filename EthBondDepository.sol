@@ -926,6 +926,8 @@ contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
         uint _target,
         uint256 _buffer 
     ) external onlyOwner() {
+        require( _increment != 0 && ( _addition && terms.controlVariable < _target || !_addition && terms.controlVariable > _target ),
+            "Invalid adjustment" );
         uint256 maxIncrement = terms.controlVariable.mul( 25 ).div( 1000 );
         require( _increment <= maxIncrement ||
                     maxIncrement == 0 && _increment == 1, "Increment too large" );
@@ -983,7 +985,7 @@ contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
         decayDebt();
 
         uint value = ITreasury( treasury ).valueOf( principle, _amount );
-        require( totalDebt.add(value) <= terms.maxDebt, "Max capacity reached" );
+        require( totalDebt.add( value ) <= terms.maxDebt, "Max capacity reached" );
         
         uint priceInUSD = bondPriceInUSD(); // Stored in bond info
         uint nativePrice = _bondPrice();
@@ -1012,13 +1014,6 @@ contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
 
         // mint rewards
         ITreasury( treasury ).mintRewards( address(this), payout );
-        
-        // refund user if needed
-        uint256 refundAmount = msg.value >= _amount ? msg.value.sub( _amount ) : msg.value;
-        if (refundAmount > 0) safeTransferETH(msg.sender, refundAmount);
-
-        // unaccounted for eth can goto DAO
-        if (address(this).balance > 0) safeTransferETH(DAO, refundAmount);
 
         // depositor info is stored
         bondInfo[ _depositor ] = Bond({ 
@@ -1033,6 +1028,14 @@ contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
         emit BondPriceChanged( bondPriceInUSD(), _bondPrice(), debtRatio() );
 
         adjust(); // control variable is adjusted
+
+        // refund user if needed
+        uint256 refundAmount = msg.value >= _amount ? msg.value.sub( _amount ) : msg.value;
+        if (refundAmount > 0) safeTransferETH(msg.sender, refundAmount);
+
+        // unaccounted for eth can goto DAO
+        if (address(this).balance > 0) safeTransferETH(DAO, refundAmount);
+
         return payout; 
     }
 

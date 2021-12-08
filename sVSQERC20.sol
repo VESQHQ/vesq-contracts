@@ -610,7 +610,6 @@ abstract contract ERC20
    * - `recipient` cannot be the zero address.
    * - the caller must have a balance of at least `amount`.
    */
-  // Overrideen in ERC777
   // Confirm that this behavior changes 
   function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
     _transfer(msg.sender, recipient, amount);

@@ -484,7 +484,7 @@ contract Distributor is BoringOwnable {
      */
     function addRecipient( address _recipient, uint _rewardRate ) external onlyOwner() {
         require( _recipient != address(0) );
-        require( info.length <= MAX_RECIPIENTS, "Can only have a max of 5 recipients!" );
+        require( info.length < MAX_RECIPIENTS, "Can only have a max of 5 recipients!" );
         require( _rewardRate <= MAX_RATE, "_rewardRate too high" );
 
         info.push( Info({
@@ -506,11 +506,11 @@ contract Distributor is BoringOwnable {
 
         if ( _index < info.length - 1 ) {
             info[ _index ] = info[ info.length - 1 ];
-            info.pop();
 
             adjustments[ _index ] = adjustments[ info.length - 1 ];
-        } else
-            info.pop();
+        }
+
+        info.pop();
 
         delete adjustments[ info.length - 1 ];
 
@@ -525,7 +525,7 @@ contract Distributor is BoringOwnable {
         @param _target uint
      */
     function setAdjustment( uint _index, bool _add, uint _rate, uint _target ) external onlyOwner() {
-        require( _rate != 0 && ( _add && info[ _index ].rate < _target ||  !_add && info[ _index ].rate > _target ), "Invalid adjustment" );
+        require( _rate != 0 && ( _add && info[ _index ].rate < _target || !_add && info[ _index ].rate > _target ), "Invalid adjustment" );
         require( _target <= MAX_RATE, "Target rate too high" );
 
         adjustments[ _index ] = Adjust({
