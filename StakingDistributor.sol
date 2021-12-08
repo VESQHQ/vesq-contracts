@@ -510,9 +510,9 @@ contract Distributor is BoringOwnable {
             adjustments[ _index ] = adjustments[ info.length - 1 ];
         }
 
-        info.pop();
-
         delete adjustments[ info.length - 1 ];
+
+        info.pop();
 
         emit RecipientRemoved( _recipient, _index );
     }
