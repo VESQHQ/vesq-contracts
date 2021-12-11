@@ -851,6 +851,7 @@ contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
         DAO = _DAO;
         require( _feed != address(0) );
         priceFeed = AggregatorV3Interface( _feed );
+        require( priceFeed.decimals() == 8, "price feed must be 8 decimals" );
     }
 
     /**
