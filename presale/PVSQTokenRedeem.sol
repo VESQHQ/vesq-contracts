@@ -74,6 +74,8 @@ contract PVSQTokenRedeem is Ownable, ReentrancyGuard {
                                                 vsqAvailable / (10 ** (VSQDecimals - pvsqDecimals)) :
                                                 vsqAvailable;
 
+        require(pvsqSwapAmountWei > 0, "Please come back soon for more VSQ to be made available!");
+
         ERC20(preVSQ).safeTransferFrom(msg.sender, BURN_ADDRESS, pvsqSwapAmountWei);
 
         uint256 VSQSwapAmountWei = pvsqDecimals > VSQDecimals ?
@@ -81,6 +83,8 @@ contract PVSQTokenRedeem is Ownable, ReentrancyGuard {
                                             pvsqDecimals < VSQDecimals ?
                                                 pvsqSwapAmountWei * (10 ** (VSQDecimals - pvsqDecimals)) :
                                                 pvsqSwapAmountWei;
+
+        require(VSQSwapAmountWei > 0, "Please come back soon for more VSQ to be made available!");
 
         require(IERC20(VSQAddress).balanceOf(address(this)) >= VSQSwapAmountWei, "Not enough tokens in contract for swap");
 
