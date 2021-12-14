@@ -328,7 +328,7 @@ contract VSQTreasury is BoringOwnable {
         require( _VSQ != address(0) );
         VSQ = _VSQ;
 
-        isReserveToken[ _Frax] = true;
+        isReserveToken[ _Frax ] = true;
         reserveTokens.push( _Frax );
 
     //    isLiquidityToken[ _VSQDAI ] = true;
@@ -459,7 +459,7 @@ contract VSQTreasury is BoringOwnable {
             require( isReserveManager[ msg.sender ], "Not approved" );
         }
 
-        uint256 value = valueOf(_token, _amount);
+        uint256 value = valueOf( _token, _amount );
 
         if ( isLiquidityToken[ _token ] || isReserveToken[ _token ])
             require( value <= excessReserves(), "Insufficient reserves" );

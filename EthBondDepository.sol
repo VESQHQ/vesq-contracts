@@ -754,7 +754,7 @@ interface IWETH9 is IERC20 {
     function deposit() external payable;
 }
 
-contract VSQBondDepository is BoringOwnable, ReentrancyGuard {
+contract VSQETHBondDepository is BoringOwnable, ReentrancyGuard {
 
     using FixedPoint for *;
     using SafeERC20 for IERC20;
